@@ -17,12 +17,14 @@ const wp = wayland.client.wp;
 const ext = wayland.client.ext;
 
 const xkb = @import("xkbcommon");
+const fcft = @import("fcft");
 
 const auth = @import("auth.zig");
 
 const Output = @import("Output.zig");
 const Seat = @import("Seat.zig");
 const PasswordBuffer = @import("PasswordBuffer.zig");
+const Prompt = @import("Prompt.zig");
 
 pub const Color = enum {
     init,
@@ -39,6 +41,7 @@ pub const Options = struct {
     input_color: u24 = 0x6c71c4,
     input_alt_color: u24 = 0x6c71c4,
     fail_color: u24 = 0xdc322f,
+    prompt: Prompt.Options = .{},
 
     fn rgb(options: Options, color: Color) u24 {
         return switch (color) {
@@ -71,11 +74,14 @@ color: Color = .init,
 fork_on_lock: bool,
 ready_fd: ?posix.fd_t,
 ignore_empty_password: bool,
+prompt_options: Prompt.Options,
 
 pollfds: [2]posix.pollfd,
 
 display: *wl.Display,
 compositor: ?*wl.Compositor = null,
+subcompositor: ?*wl.Subcompositor = null,
+shm: ?*wl.Shm = null,
 session_lock_manager: ?*ext.SessionLockManagerV1 = null,
 session_lock: ?*ext.SessionLockV1 = null,
 viewporter: ?*wp.Viewporter = null,
@@ -96,6 +102,7 @@ pub fn run(io: Io, gpa: mem.Allocator, options: Options) void {
         .fork_on_lock = options.fork_on_lock,
         .ready_fd = options.ready_fd,
         .ignore_empty_password = options.ignore_empty_password,
+        .prompt_options = options.prompt,
         .pollfds = undefined,
         .display = wl.Display.connect(null) catch |err| {
             fatal("failed to connect to a wayland compositor: {s}", .{@errorName(err)});
@@ -111,6 +118,10 @@ pub fn run(io: Io, gpa: mem.Allocator, options: Options) void {
 
     lock.seats.init();
     lock.outputs.init();
+
+    // After the fork of the child authentication process, thus the child has
+    // no fonts. fcft logs its errors only.
+    _ = fcft.init(.never, false, .err);
 
     const poll_wayland = 0;
     const poll_auth = 1;
@@ -138,6 +149,8 @@ pub fn run(io: Io, gpa: mem.Allocator, options: Options) void {
     }
 
     if (lock.compositor == null) fatal_not_advertised(wl.Compositor);
+    if (lock.subcompositor == null) fatal_not_advertised(wl.Subcompositor);
+    if (lock.shm == null) fatal_not_advertised(wl.Shm);
     if (lock.session_lock_manager == null) fatal_not_advertised(ext.SessionLockManagerV1);
     if (lock.viewporter == null) fatal_not_advertised(wp.Viewporter);
     if (lock.buffer_manager == null) fatal_not_advertised(wp.SinglePixelBufferManagerV1);
@@ -264,6 +277,8 @@ fn flush_wayland_and_prepare_read(lock: *Lock) void {
 /// Clean up resources just so we can better use tooling such as valgrind to check for leaks.
 fn deinit(lock: *Lock) void {
     if (lock.compositor) |compositor| compositor.destroy();
+    if (lock.subcompositor) |subcompositor| subcompositor.destroy();
+    if (lock.shm) |shm| shm.destroy();
     if (lock.viewporter) |viewporter| viewporter.destroy();
     for (lock.buffers) |buffer| buffer.destroy();
 
@@ -302,6 +317,10 @@ fn registry_event(lock: *Lock, registry: *wl.Registry, event: wl.Registry.Event)
                     fatal("advertised wl_compositor version too old, version 4 required", .{});
                 }
                 lock.compositor = try registry.bind(ev.name, wl.Compositor, 4);
+            } else if (mem.orderZ(u8, ev.interface, wl.Subcompositor.interface.name) == .eq) {
+                lock.subcompositor = try registry.bind(ev.name, wl.Subcompositor, 1);
+            } else if (mem.orderZ(u8, ev.interface, wl.Shm.interface.name) == .eq) {
+                lock.shm = try registry.bind(ev.name, wl.Shm, 1);
             } else if (mem.orderZ(u8, ev.interface, ext.SessionLockManagerV1.interface.name) == .eq) {
                 lock.session_lock_manager = try registry.bind(ev.name, ext.SessionLockManagerV1, 1);
             } else if (mem.orderZ(u8, ev.interface, wl.Output.interface.name) == .eq) {
@@ -322,6 +341,7 @@ fn registry_event(lock: *Lock, registry: *wl.Registry, event: wl.Registry.Event)
                     .link = undefined,
                 };
                 lock.outputs.prepend(output);
+                output.listen();
 
                 switch (lock.state) {
                     .initializing, .exiting => {},
@@ -415,11 +435,18 @@ pub fn submit_password(lock: *Lock) void {
 }
 
 fn send_password_to_auth(lock: *Lock) !void {
+    defer lock.password_changed();
     defer lock.password.clear();
     var writer = lock.auth_connection.writer(lock.io);
     const len_bytes: [4]u8 = @bitCast(@as(u32, @intCast(lock.password.buffer.len)));
     try writer.interface.writeAll(&len_bytes);
     try writer.interface.writeAll(lock.password.buffer);
+}
+
+/// Draws the prompt of each output with the new length of the password.
+pub fn password_changed(lock: *Lock) void {
+    var it = lock.outputs.iterator(.forward);
+    while (it.next()) |output| output.render_prompt();
 }
 
 pub fn set_color(lock: *Lock, color: Color) void {

@@ -174,6 +174,7 @@ fn keyboard_listener(_: *wl.Keyboard, event: wl.Keyboard.Event, seat: *Seat) voi
                 xkb.Keysym.Escape => {
                     lock.password.clear();
                     lock.set_color(.init);
+                    lock.password_changed();
                     return;
                 },
                 xkb.Keysym.u => {
@@ -186,6 +187,7 @@ fn keyboard_listener(_: *wl.Keyboard, event: wl.Keyboard.Event, seat: *Seat) voi
                     if (ctrl_active) {
                         lock.password.clear();
                         lock.set_color(.init);
+                        lock.password_changed();
                         return;
                     }
                 },
@@ -194,6 +196,7 @@ fn keyboard_listener(_: *wl.Keyboard, event: wl.Keyboard.Event, seat: *Seat) voi
                     if (lock.password.buffer.len == 0) {
                         lock.set_color(.init);
                     }
+                    lock.password_changed();
                     return;
                 },
                 else => {},
@@ -208,6 +211,7 @@ fn keyboard_listener(_: *wl.Keyboard, event: wl.Keyboard.Event, seat: *Seat) voi
                 }
             }
             lock.password.grow(delta) catch log.err("password exceeds 1024 byte limit", .{});
+            if (delta > 0) lock.password_changed();
         },
         .repeat_info => {},
     }

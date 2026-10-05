@@ -28,6 +28,9 @@ const usage =
     \\  -input-alt-color 0xRRGGBB  Set the alternate color used after input.
     \\  -fail-color 0xRRGGBB       Set the color used on authentication failure.
     \\
+    \\  -font <name>               Set the fcft font of the password prompt.
+    \\  -text-color 0xRRGGBB       Set the color of the password prompt.
+    \\
 ;
 
 pub fn main(init: process.Init) error{ OutOfMemory, Unexpected }!void {
@@ -54,6 +57,8 @@ pub fn main(init: process.Init) error{ OutOfMemory, Unexpected }!void {
         .{ .name = "input-color", .kind = .arg },
         .{ .name = "input-alt-color", .kind = .arg },
         .{ .name = "fail-color", .kind = .arg },
+        .{ .name = "font", .kind = .arg },
+        .{ .name = "text-color", .kind = .arg },
     }).parse(args[1..]) catch {
         stderr.writeAll(usage) catch {};
         process.exit(1);
@@ -104,6 +109,8 @@ pub fn main(init: process.Init) error{ OutOfMemory, Unexpected }!void {
     }
     if (result.flags.@"input-alt-color") |raw| options.input_alt_color = parse_color(raw);
     if (result.flags.@"fail-color") |raw| options.fail_color = parse_color(raw);
+    if (result.flags.font) |raw| options.prompt.font = try arena.dupeZ(u8, raw);
+    if (result.flags.@"text-color") |raw| options.prompt.text_color = parse_color(raw);
 
     Lock.run(io, init.gpa, options);
 }

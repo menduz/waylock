@@ -82,6 +82,8 @@ pub fn build(b: *Build) !void {
     scanner.addSystemProtocol("stable/viewporter/viewporter.xml");
 
     scanner.generate("wl_compositor", 4);
+    scanner.generate("wl_subcompositor", 1);
+    scanner.generate("wl_shm", 1);
     scanner.generate("wl_output", 3);
     scanner.generate("wl_seat", 5);
     scanner.generate("ext_session_lock_manager_v1", 1);
@@ -90,6 +92,8 @@ pub fn build(b: *Build) !void {
 
     const wayland = b.createModule(.{ .root_source_file = scanner.result });
     const xkbcommon = b.dependency("xkbcommon", .{}).module("xkbcommon");
+    const pixman = b.dependency("pixman", .{}).module("pixman");
+    const fcft = b.dependency("fcft", .{}).module("fcft");
 
     const waylock = b.addExecutable(.{
         .name = "waylock",
@@ -113,7 +117,24 @@ pub fn build(b: *Build) !void {
     waylock.root_module.addImport("xkbcommon", xkbcommon);
     waylock.root_module.linkSystemLibrary("xkbcommon", .{});
 
+    // The password prompt: fcft rasterizes the glyphs, pixman draws them.
+    waylock.root_module.addImport("pixman", pixman);
+    waylock.root_module.linkSystemLibrary("pixman-1", .{});
+    waylock.root_module.addImport("fcft", fcft);
+    waylock.root_module.linkSystemLibrary("fcft", .{});
+
     waylock.pie = pie;
 
     b.installArtifact(waylock);
+
+    // The tests of the files without Wayland objects or fonts.
+    const tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/prompt_layout.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const test_step = b.step("test", "Run the tests");
+    test_step.dependOn(&b.addRunArtifact(tests).step);
 }

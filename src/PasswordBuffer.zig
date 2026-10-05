@@ -66,6 +66,18 @@ pub fn pop_codepoint(password: *PasswordBuffer) void {
     unreachable;
 }
 
+/// The number of code points in the password. The prompt shows one mask
+/// character for each. It reads the length of each code point, not its value.
+pub fn codepoints(password: PasswordBuffer) usize {
+    var count: usize = 0;
+    var i: usize = 0;
+    while (i < password.buffer.len) : (count += 1) {
+        // Only valid UTF-8 is written to the buffer.
+        i += std.unicode.utf8ByteSequenceLength(password.buffer[i]) catch 1;
+    }
+    return count;
+}
+
 pub fn clear(password: *PasswordBuffer) void {
     std.crypto.secureZero(u8, password.buffer);
     password.buffer.len = 0;

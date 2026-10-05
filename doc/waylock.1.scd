@@ -58,7 +58,19 @@ unlocked.
 *-fail-color* _0xRRGGBB_
 	Set the color used on authentication failure. (default: 0xdc322f)
 
+*-font* _name_
+	Set the font of the password prompt, as an fcft font name (a
+	fontconfig pattern). The size is in points, and waylock gives fcft
+	the DPI of each output, 96 times its scale. (default: Terminus:size=12)
+
+*-text-color* _0xRRGGBB_
+	Set the color of the password prompt. (default: 0xffffff)
+
 # USAGE
+
+Waylock shows a prompt in the center of each output: the line "Locked.
+Type your password:", then a "\*" for each character of the password and
+the cursor "\_".
 
 Run the waylock executable to lock the session. All monitors will be blanked
 with the *-init-color*. Typing causes the color to change to the
