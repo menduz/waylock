@@ -103,8 +103,11 @@ fn lock_surface_listener(
             output.width = @min(std.math.maxInt(u31), ev.width);
             output.height = @min(std.math.maxInt(u31), ev.height);
             output.lock_surface.?.ackConfigure(ev.serial);
-            output.render_prompt();
+            // The commit of the new size comes first. The prompt can commit
+            // the lock surface for its position, and a commit before the
+            // new size would not match the configure.
             output.attach_buffer(lock.buffers[@intFromEnum(lock.color)]);
+            output.render_prompt();
         },
     }
 }

@@ -64,6 +64,25 @@ pub fn box(
     };
 }
 
+/// The position of the subsurface of the prompt. The position of a
+/// wl_subsurface is state of the parent surface: the compositor applies it at
+/// the next commit of the parent. Thus Prompt.zig commits the lock surface
+/// when the position changes. Else the prompt stays at its old position, for
+/// example after a change of the scale or the mode of the output.
+pub const Position = struct {
+    current: ?struct { x: i32, y: i32 } = null,
+
+    /// Keeps the position of the box. Returns true when it is a new
+    /// position: then the parent needs a commit.
+    pub fn set(position: *Position, x: i32, y: i32) bool {
+        if (position.current) |current| {
+            if (current.x == x and current.y == y) return false;
+        }
+        position.current = .{ .x = x, .y = y };
+        return true;
+    }
+};
+
 fn round_up(value: i32, multiple: i32) i32 {
     return @divFloor(value + multiple - 1, multiple) * multiple;
 }
@@ -120,4 +139,34 @@ test "box: a title wider than the output starts at the left edge" {
     const b = box(100, 50, 1, 216, 8, 16);
     try testing.expectEqual(@as(i32, 0), b.x);
     try testing.expectEqual(@as(i32, 100), b.buffer_width);
+}
+
+test "Position: the first position needs a commit of the parent" {
+    var position: Position = .{};
+    try testing.expect(position.set(533, 346));
+}
+
+test "Position: the same position needs no commit of the parent" {
+    var position: Position = .{};
+    _ = position.set(533, 346);
+    try testing.expect(!position.set(533, 346));
+}
+
+test "Position: a change of the scale moves the box, the parent needs a commit" {
+    var position: Position = .{};
+    // 1280x720 at scale 1, then the same output at scale 2 (640x360).
+    const b1 = box(1280, 720, 1, 214, 8, 14);
+    try testing.expect(position.set(b1.x, b1.y));
+    const b2 = box(640, 360, 2, 428, 16, 28);
+    try testing.expect(b2.x != b1.x);
+    try testing.expect(position.set(b2.x, b2.y));
+    try testing.expect(!position.set(b2.x, b2.y));
+}
+
+test "Position: a change of the mode moves the box, the parent needs a commit" {
+    var position: Position = .{};
+    const b1 = box(1280, 720, 1, 214, 8, 14);
+    _ = position.set(b1.x, b1.y);
+    const b2 = box(1920, 1080, 1, 214, 8, 14);
+    try testing.expect(position.set(b2.x, b2.y));
 }

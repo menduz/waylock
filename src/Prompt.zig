@@ -117,6 +117,9 @@ options: Options,
 shm: *wl.Shm,
 surface: *wl.Surface,
 subsurface: *wl.Subsurface,
+/// The lock surface. A commit of it applies the position of the subsurface.
+parent: *wl.Surface,
+position: layout.Position = .{},
 font: ?*fcft.Font = null,
 font_scale: i32 = 0,
 buffers: [2]Buffer,
@@ -137,7 +140,8 @@ pub fn init(
     const subsurface = try subcompositor.getSubsurface(surface, parent);
     errdefer subsurface.destroy();
     // A commit of the prompt shows at once, without a commit of the parent.
-    // Only the position waits for the next commit of the parent.
+    // Only the position waits for the next commit of the parent. draw()
+    // commits the parent when the position changes.
     subsurface.setDesync();
 
     // The input goes to the lock surface below.
@@ -150,6 +154,7 @@ pub fn init(
         .shm = shm,
         .surface = surface,
         .subsurface = subsurface,
+        .parent = parent,
         .buffers = .{ .{ .prompt = prompt }, .{ .prompt = prompt } },
     };
 }
@@ -216,6 +221,10 @@ fn draw(prompt: *Prompt, state: State) !void {
     prompt.surface.damageBuffer(0, 0, math.maxInt(i32), math.maxInt(i32));
     prompt.surface.commit();
     buffer.busy = true;
+
+    // The compositor applies a new position at the next commit of the lock
+    // surface. Refer to layout.Position.
+    if (prompt.position.set(box.x, box.y)) prompt.parent.commit();
 }
 
 /// The font at `scale`. A new scale loads the font again.
