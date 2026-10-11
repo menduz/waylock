@@ -83,6 +83,10 @@ pub fn clear(password: *PasswordBuffer) void {
     password.buffer.len = 0;
 }
 
+/// Keep the password out of swap. A failure is not fatal: waylock runs
+/// before the session is locked, so an exit here leaves the session unlocked.
+/// Without mlock() the lock still works; only the swap protection of the
+/// buffer is missing. A low RLIMIT_MEMLOCK can cause the failure.
 fn prevent_swapping(buffer: []align(heap.page_size_max) const u8) void {
     var attempts: usize = 0;
     while (attempts < 10) : (attempts += 1) {
@@ -91,11 +95,12 @@ fn prevent_swapping(buffer: []align(heap.page_size_max) const u8) void {
             .SUCCESS => return,
             .AGAIN => continue,
             else => {
-                process.fatal("mlock() on password buffer failed: E{s}", .{@tagName(errno)});
+                log.err("mlock() on password buffer failed: E{s}; the password can go to swap", .{@tagName(errno)});
+                return;
             },
         }
     }
-    process.fatal("mlock() on password buffer failed: EAGAIN after 10 attempts", .{});
+    log.err("mlock() on password buffer failed: EAGAIN after 10 attempts; the password can go to swap", .{});
 }
 
 fn prevent_dumping_best_effort(buffer: []align(heap.page_size_max) u8) void {
